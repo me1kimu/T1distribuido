@@ -47,8 +47,10 @@ def _generate_query(distribution: str, rng: random.Random) -> dict:
 
 def _default_metrics_url(base_url: str) -> str:
     parsed = urlparse(base_url.rstrip("/"))
-    netloc = parsed.netloc.split("@")[-1]
-    host = netloc.split(":")[0] if ":" in netloc else netloc
+    host = parsed.hostname or parsed.netloc.split("@")[-1].split(":")[0]
+
+    if host == "cache-service":
+        host = "metrics-service"
     return urlunparse((parsed.scheme or "http", f"{host}:8001", "/summary", "", "", ""))
 
 
