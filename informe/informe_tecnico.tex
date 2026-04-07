@@ -16,6 +16,7 @@
 
 \section{Resumen}
 Se implementó una arquitectura distribuida compuesta por generador de tráfico, servicio de caché, generador de respuestas y almacenamiento de métricas. El sistema opera sobre datos precargados en memoria y no depende de una base de datos externa en tiempo de ejecución.
+En esta versión del informe se incorporan \textbf{resultados experimentales reales}, obtenidos ejecutando campañas controladas sobre el despliegue Docker Compose.
 
 \section{Arquitectura}
 La solución se desplegó con Docker Compose y contempla cinco contenedores: Redis, Metrics Service, Response Service, Cache Service y Traffic Generator. El flujo es secuencial: tráfico $\rightarrow$ caché $\rightarrow$ respuestas, con registro transversal de métricas.
@@ -47,17 +48,97 @@ Se registran: hit rate, miss rate, throughput, latencias p50/p95, tasa de evicci
   \item \textbf{Cálculo en memoria}: reduce complejidad operacional y cumple el requisito de no usar base de datos en runtime.
 \end{itemize}
 
-\section{Plan Experimental}
-Se propone evaluar combinaciones de:
+\section{Metodología Experimental Real}
+Los experimentos se ejecutaron sobre el sistema desplegado con \texttt{docker compose}, reiniciando el entorno entre escenarios para evitar contaminación de estado.
+Se usaron dos campañas:
 \begin{itemize}
-  \item Distribución de tráfico: uniforme vs Zipf.
-  \item Tamaño de caché: 50 MB, 200 MB, 500 MB.
-  \item Política de remoción: LRU, LFU y FIFO.
-  \item TTL por tipo de consulta.
+  \item \textbf{Campaña A (alta cardinalidad)}: 4{,}000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché.
+  \item \textbf{Campaña B (sensibilidad TTL)}: 1{,}200 requests por escenario, distribución Zipf, caché 5 MB, con 50 ms entre requests para forzar expiraciones.
+\end{itemize}
+Las métricas se obtuvieron desde \texttt{/summary} del servicio de métricas al finalizar cada corrida.
+
+\section{Resultados Experimentales}
+
+\subsection{Impacto de la distribución de tráfico}
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Distribución & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) \\
+\midrule
+Uniforme & 0.5223 & 0.4778 & 127.74 & 4.584 \\
+Zipf & 0.5703 & 0.4298 & 131.51 & 4.563 \\
+\bottomrule
+\end{tabular}
+\caption{Comparación real con política LRU y caché de 3 MB.}
+\end{table}
+
+Con tráfico Zipf se observó mayor localización de referencias, mejorando el hit rate en 4.8 puntos porcentuales y elevando throughput.
+
+\subsection{Efecto de la política de remoción}
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Política & Hit rate & Throughput (qps) & Latencia p95 (ms) & Evictions/min \\
+\midrule
+LRU & 0.5703 & 124.66 & 4.749 & 0.00 \\
+LFU & 0.5703 & 129.20 & 4.628 & 0.00 \\
+FIFO (aprox. con random) & 0.5703 & 130.72 & 4.548 & 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Comparación real bajo Zipf, caché de 3 MB, TTL=300 s.}
+\end{table}
+
+En esta configuración no hubo evicciones, por lo que las políticas muestran hit rate equivalente y diferencias menores en latencia/throughput atribuibles a variación operacional.
+
+\subsection{Efecto del tamaño de caché}
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Tamaño & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) & Evictions/min \\
+\midrule
+1 MB & 0.0000 & 1.0000 & 97.64 & 4.748 & 1.46 \\
+3 MB & 0.5703 & 0.4298 & 132.14 & 4.503 & 0.00 \\
+10 MB & 0.5703 & 0.4298 & 131.17 & 4.535 & 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Sensibilidad real del hit rate y rendimiento al tamaño de caché.}
+\end{table}
+
+El cambio de 1 MB a 3 MB evita el colapso del caché (sin hits) y mejora significativamente throughput. De 3 MB a 10 MB no hay mejora material, indicando saturación del beneficio.
+
+\subsection{Efecto de TTL}
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+TTL (s) & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) \\
+\midrule
+5 & 0.5258 & 0.4742 & 16.39 & 5.800 \\
+20 & 0.7575 & 0.2425 & 16.64 & 5.561 \\
+120 & 0.9042 & 0.0958 & 16.84 & 5.369 \\
+\bottomrule
+\end{tabular}
+\caption{Resultados reales con 1,200 requests y 50 ms de separación entre solicitudes.}
+\end{table}
+
+Aumentar TTL reduce expiraciones prematuras, mejorando hit rate y reduciendo latencia de cola. Esto confirma que consultas repetitivas se benefician fuertemente de TTL altos.
+
+\section{Discusión Crítica}
+\begin{itemize}
+  \item \textbf{Distribución de tráfico}: Zipf representa mejor escenarios urbanos con zonas calientes y ofrece ventajas medibles de caché.
+  \item \textbf{Políticas de remoción}: cuando el working set cabe en memoria, su impacto es marginal; la elección pasa a ser menos crítica que el dimensionamiento.
+  \item \textbf{Tamaño de caché}: existe un umbral mínimo operativo (en nuestras pruebas, cercano a 3 MB) bajo el cual el caché pierde efectividad.
+  \item \textbf{TTL}: es el parámetro más sensible tras el tamaño; TTL muy bajo degrada el sistema incluso sin presión de memoria.
 \end{itemize}
 
-\section{Resultados Esperados}
-En escenarios Zipf se espera mayor hit rate por repetición de zonas populares. A mayor tamaño de caché, se espera menor miss rate y menor latencia p95, hasta observar rendimientos decrecientes.
+\section{Amenazas a la validez}
+\begin{itemize}
+  \item La campaña de políticas no mostró evicción en 3 MB; para contrastes más fuertes se requiere una carga aún más grande o mayor cardinalidad sostenida.
+  \item Se evaluó una mezcla sintética de Q1--Q5; resultados por consulta individual pueden diferir.
+\end{itemize}
 
 \section{Repositorio y despliegue}
 El código, Dockerfile y docker-compose están incluidos en el repositorio. El despliegue se realiza con \texttt{docker compose up --build} y la operación se documenta en \texttt{README.md}.
