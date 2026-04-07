@@ -1,0 +1,65 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\geometry{margin=2.5cm}
+
+\title{Informe Técnico -- Entregable 1\\Plataforma de Análisis de Consultas con Caché}
+\author{Equipo T1 Sistemas Distribuidos}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Resumen}
+Se implementó una arquitectura distribuida compuesta por generador de tráfico, servicio de caché, generador de respuestas y almacenamiento de métricas. El sistema opera sobre datos precargados en memoria y no depende de una base de datos externa en tiempo de ejecución.
+
+\section{Arquitectura}
+La solución se desplegó con Docker Compose y contempla cinco contenedores: Redis, Metrics Service, Response Service, Cache Service y Traffic Generator. El flujo es secuencial: tráfico $\rightarrow$ caché $\rightarrow$ respuestas, con registro transversal de métricas.
+
+\section{Módulos Implementados}
+\subsection{Generador de Tráfico}
+Genera solicitudes sintéticas para Q1--Q5 bajo distribuciones uniforme y Zipf, para emular zonas calientes y patrones repetitivos.
+
+\subsection{Servicio de Caché}
+Implementado con Redis, soporta TTL y política de remoción configurable. En cada consulta registra hit/miss, latencia y evicciones.
+
+\subsection{Generador de Respuestas}
+Precarga dataset de edificaciones y calcula en memoria:
+\begin{itemize}
+  \item Q1: conteo por zona y umbral de confianza.
+  \item Q2: área promedio y área total.
+  \item Q3: densidad por km$^2$.
+  \item Q4: comparación de densidad entre dos zonas.
+  \item Q5: histograma de confianza.
+\end{itemize}
+
+\subsection{Métricas}
+Se registran: hit rate, miss rate, throughput, latencias p50/p95, tasa de evicción y eficiencia de caché.
+
+\section{Decisiones de Diseño}
+\begin{itemize}
+  \item \textbf{FastAPI}: facilita APIs ligeras y validación de payloads.
+  \item \textbf{Redis}: entrega operaciones O(1), TTL nativo y políticas LRU/LFU/FIFO configurables.
+  \item \textbf{Cálculo en memoria}: reduce complejidad operacional y cumple el requisito de no usar base de datos en runtime.
+\end{itemize}
+
+\section{Plan Experimental}
+Se propone evaluar combinaciones de:
+\begin{itemize}
+  \item Distribución de tráfico: uniforme vs Zipf.
+  \item Tamaño de caché: 50 MB, 200 MB, 500 MB.
+  \item Política de remoción: LRU, LFU y FIFO.
+  \item TTL por tipo de consulta.
+\end{itemize}
+
+\section{Resultados Esperados}
+En escenarios Zipf se espera mayor hit rate por repetición de zonas populares. A mayor tamaño de caché, se espera menor miss rate y menor latencia p95, hasta observar rendimientos decrecientes.
+
+\section{Repositorio y despliegue}
+El código, Dockerfile y docker-compose están incluidos en el repositorio. El despliegue se realiza con \texttt{docker compose up --build} y la operación se documenta en \texttt{README.md}.
+
+\end{document}

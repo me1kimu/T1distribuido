@@ -1,0 +1,47 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+
+  metrics-service:
+    build: .
+    command: ["uvicorn", "src.metrics_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      - PYTHONPATH=/app
+    ports:
+      - "8001:8001"
+
+  response-service:
+    build: .
+    command: ["uvicorn", "src.response_service:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      - PYTHONPATH=/app
+      - DATASET_PATH=/app/src/open_buildings_rm.csv
+    ports:
+      - "8002:8002"
+
+  cache-service:
+    build: .
+    command: ["uvicorn", "src.cache_service:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_URL=redis://redis:6379/0
+      - RESPONSE_SERVICE_URL=http://response-service:8002
+      - METRICS_SERVICE_URL=http://metrics-service:8001
+      - CACHE_TTL=120
+    depends_on:
+      - redis
+      - response-service
+      - metrics-service
+    ports:
+      - "8000:8000"
+
+  traffic-generator:
+    build: .
+    command: ["python", "-m", "src.traffic_generator", "--base-url", "http://cache-service:8000", "--requests", "500", "--distribution", "zipf"]
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - cache-service
