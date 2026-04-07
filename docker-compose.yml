@@ -40,7 +40,7 @@ services:
 
   traffic-generator:
     build: .
-    command: ["python", "-m", "src.traffic_generator", "--base-url", "http://cache-service:8000", "--requests", "500", "--distribution", "zipf"]
+    command: ["python", "-m", "src.traffic_generator", "--base-url", "http://cache-service:8000", "--metrics-url", "http://metrics-service:8001/summary", "--requests", "500", "--distribution", "zipf"]
     environment:
       - PYTHONPATH=/app
     depends_on:
