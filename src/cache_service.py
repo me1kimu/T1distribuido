@@ -28,11 +28,12 @@ _eviction_lock = asyncio.Lock()
 async def startup() -> None:
     global redis_client, response_client, metrics_client, _last_evicted_keys
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    redis_client = redis.from_url(redis_url, decode_responses=True)
+    client = redis.from_url(redis_url, decode_responses=True)
+    redis_client = client
     response_client = httpx.AsyncClient(timeout=30.0)
     metrics_client = httpx.AsyncClient(timeout=5.0)
     try:
-        info = await to_thread.run_sync(lambda: redis_client.info("stats"))
+        info = await to_thread.run_sync(lambda: client.info("stats"))
         _last_evicted_keys = int(info.get("evicted_keys", 0))
     except Exception:
         _last_evicted_keys = 0
@@ -56,14 +57,14 @@ async def _push_metric(event: MetricEvent) -> None:
 
 
 async def _register_evictions_if_any() -> int:
-    if redis_client is None:
-        return 0
-
     global _last_evicted_keys
 
     async with _eviction_lock:
+        client = redis_client
+        if client is None:
+            return 0
         try:
-            info = await to_thread.run_sync(lambda: redis_client.info("stats"))
+            info = await to_thread.run_sync(lambda: client.info("stats"))
             current = int(info.get("evicted_keys", 0))
         except Exception:
             return 0
@@ -80,14 +81,16 @@ def health() -> dict:
 
 @app.post("/query")
 async def query(payload: QueryRequest) -> dict:
-    if redis_client is None or response_client is None:
+    redis_ref = redis_client
+    response_ref = response_client
+    if redis_ref is None or response_ref is None:
         raise HTTPException(status_code=503, detail="cache-service no inicializado")
 
     key = build_cache_key(payload)
     start = time.perf_counter()
 
     try:
-        cached = await to_thread.run_sync(lambda: redis_client.get(key))
+        cached = await to_thread.run_sync(lambda: redis_ref.get(key))
     except Exception:
         cached = None
 
@@ -97,7 +100,7 @@ async def query(payload: QueryRequest) -> dict:
         return {"cache_key": key, "source": "cache", "result": json.loads(cached)}
 
     try:
-        response = await response_client.post(f"{response_service_url}/compute", json=payload.model_dump())
+        response = await response_ref.post(f"{response_service_url}/compute", json=payload.model_dump())
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
@@ -106,7 +109,7 @@ async def query(payload: QueryRequest) -> dict:
 
     computed = response.json()
     try:
-        await to_thread.run_sync(lambda: redis_client.set(key, json.dumps(computed["result"]), ex=cache_ttl_seconds))
+        await to_thread.run_sync(lambda: redis_ref.set(key, json.dumps(computed["result"]), ex=cache_ttl_seconds))
     except Exception:
         pass
 
