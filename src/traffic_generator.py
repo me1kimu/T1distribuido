@@ -4,6 +4,7 @@ import argparse
 import random
 import time
 from collections import Counter
+from urllib.parse import urlparse, urlunparse
 
 import requests
 
@@ -44,7 +45,14 @@ def _generate_query(distribution: str, rng: random.Random) -> dict:
     }
 
 
-def run(base_url: str, requests_n: int, distribution: str, sleep_ms: int, seed: int) -> None:
+def _default_metrics_url(base_url: str) -> str:
+    parsed = urlparse(base_url.rstrip("/"))
+    netloc = parsed.netloc.split("@")[-1]
+    host = netloc.split(":")[0] if ":" in netloc else netloc
+    return urlunparse((parsed.scheme or "http", f"{host}:8001", "/summary", "", "", ""))
+
+
+def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: str, sleep_ms: int, seed: int) -> None:
     rng = random.Random(seed)
     session = requests.Session()
     endpoint = f"{base_url.rstrip('/')}/query"
@@ -76,7 +84,8 @@ def run(base_url: str, requests_n: int, distribution: str, sleep_ms: int, seed: 
     print(f"Distribución por consulta: {dict(by_type)}")
 
     try:
-        metrics = session.get(f"{base_url.rstrip('/')}/../metrics-service:8001/summary", timeout=5)
+        metrics_endpoint = metrics_url or _default_metrics_url(base_url)
+        metrics = session.get(metrics_endpoint, timeout=5)
         if metrics.ok:
             print("Resumen métricas:", metrics.json())
     except requests.RequestException:
@@ -88,11 +97,12 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--requests", type=int, default=200)
     parser.add_argument("--distribution", choices=["uniform", "zipf"], default="uniform")
+    parser.add_argument("--metrics-url", default=None)
     parser.add_argument("--sleep-ms", type=int, default=0)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
 
-    run(args.base_url, args.requests, args.distribution, args.sleep_ms, args.seed)
+    run(args.base_url, args.metrics_url, args.requests, args.distribution, args.sleep_ms, args.seed)
 
 
 if __name__ == "__main__":
