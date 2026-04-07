@@ -52,11 +52,20 @@ Se registran: hit rate, miss rate, throughput, latencias p50/p95, tasa de evicci
 Los experimentos se ejecutaron sobre el sistema desplegado con \texttt{docker compose}, reiniciando el entorno entre escenarios para evitar contaminación de estado.
 Se usaron dos campañas:
 \begin{itemize}
-  \item \textbf{Campaña A (alta cardinalidad)}: 4\,000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché.
+  \item \textbf{Campaña A (alta cardinalidad)}: 4\,000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché (1 MB, 3 MB y 10 MB).
   \item \textbf{Campaña B (sensibilidad TTL)}: 1\,200 requests por escenario, distribución Zipf, caché 5 MB, con 50 ms entre requests para forzar expiraciones.
 \end{itemize}
-Las métricas se obtuvieron desde \texttt{/summary} del servicio de métricas al finalizar cada corrida.
+Para reproducir los tamaños de caché reportados en las tablas, Redis debe iniciarse en cada escenario con \texttt{maxmemory} igual al tamaño evaluado. En este repositorio, si el archivo \texttt{docker-compose.yml} fija Redis con \texttt{--maxmemory 200mb}, ese valor debe reemplazarse temporalmente por \texttt{1mb}, \texttt{3mb}, \texttt{10mb} o \texttt{5mb}, según corresponda al escenario bajo prueba.
 
+El procedimiento reproducible usado en todas las corridas fue:
+\begin{enumerate}
+  \item ajustar el parámetro \texttt{--maxmemory} del servicio Redis al valor del escenario;
+  \item levantar el entorno con \texttt{docker compose up};
+  \item ejecutar la campaña correspondiente del generador de tráfico;
+  \item consultar \texttt{/summary} del servicio de métricas al finalizar la corrida;
+  \item reiniciar el entorno antes de pasar al siguiente escenario.
+\end{enumerate}
+De este modo, los resultados de las tablas quedan alineados con la configuración efectiva del despliegue y pueden ser reproducidos desde el repositorio.
 \section{Resultados Experimentales}
 
 \subsection{Impacto de la distribución de tráfico}
