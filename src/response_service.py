@@ -31,6 +31,11 @@ def compute(query: QueryRequest) -> dict:
             status_code=503,
             detail="Response engine is not initialized",
         )
+    if engine is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Response engine is not initialized",
+        )
     try:
         return engine.compute(query)
     except QueryValidationError as exc:
