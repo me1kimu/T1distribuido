@@ -52,8 +52,8 @@ Se registran: hit rate, miss rate, throughput, latencias p50/p95, tasa de evicci
 Los experimentos se ejecutaron sobre el sistema desplegado con \texttt{docker compose}, reiniciando el entorno entre escenarios para evitar contaminación de estado.
 Se usaron dos campañas:
 \begin{itemize}
-  \item \textbf{Campaña A (alta cardinalidad)}: 4{,}000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché.
-  \item \textbf{Campaña B (sensibilidad TTL)}: 1{,}200 requests por escenario, distribución Zipf, caché 5 MB, con 50 ms entre requests para forzar expiraciones.
+  \item \textbf{Campaña A (alta cardinalidad)}: 4\,000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché.
+  \item \textbf{Campaña B (sensibilidad TTL)}: 1\,200 requests por escenario, distribución Zipf, caché 5 MB, con 50 ms entre requests para forzar expiraciones.
 \end{itemize}
 Las métricas se obtuvieron desde \texttt{/summary} del servicio de métricas al finalizar cada corrida.
 
@@ -121,7 +121,7 @@ TTL (s) & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) \\
 120 & 0.9042 & 0.0958 & 16.84 & 5.369 \\
 \bottomrule
 \end{tabular}
-\caption{Resultados reales con 1,200 requests y 50 ms de separación entre solicitudes.}
+\caption{Resultados reales con 1\,200 requests y 50 ms de separación entre solicitudes.}
 \end{table}
 
 Aumentar TTL reduce expiraciones prematuras, mejorando hit rate y reduciendo latencia de cola. Esto confirma que consultas repetitivas se benefician fuertemente de TTL altos.
