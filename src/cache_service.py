@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import time
+from functools import partial
 
 import httpx
 import redis
@@ -33,7 +34,7 @@ async def startup() -> None:
     response_client = httpx.AsyncClient(timeout=30.0)
     metrics_client = httpx.AsyncClient(timeout=5.0)
     try:
-        info = await to_thread.run_sync(lambda: client.info("stats"))
+        info = await to_thread.run_sync(client.info, "stats")
         _last_evicted_keys = int(info.get("evicted_keys", 0))
     except Exception:
         _last_evicted_keys = 0
@@ -64,7 +65,7 @@ async def _register_evictions_if_any() -> int:
         if client is None:
             return 0
         try:
-            info = await to_thread.run_sync(lambda: client.info("stats"))
+            info = await to_thread.run_sync(client.info, "stats")
             current = int(info.get("evicted_keys", 0))
         except Exception:
             return 0
@@ -90,7 +91,7 @@ async def query(payload: QueryRequest) -> dict:
     start = time.perf_counter()
 
     try:
-        cached = await to_thread.run_sync(lambda: redis_ref.get(key))
+        cached = await to_thread.run_sync(redis_ref.get, key)
     except Exception:
         cached = None
 
@@ -109,7 +110,7 @@ async def query(payload: QueryRequest) -> dict:
 
     computed = response.json()
     try:
-        await to_thread.run_sync(lambda: redis_ref.set(key, json.dumps(computed["result"]), ex=cache_ttl_seconds))
+        await to_thread.run_sync(partial(redis_ref.set, key, json.dumps(computed["result"]), ex=cache_ttl_seconds))
     except Exception:
         pass
 
