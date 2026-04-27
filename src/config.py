@@ -13,6 +13,7 @@ class Zone(TypedDict):
     lon_max: float
 
 
+# Bounding boxes de las cinco zonas predefinidas de Santiago.
 ZONES: Dict[str, Zone] = {
     "Z1": {"id": "Z1", "name": "Providencia", "lat_min": -33.445, "lat_max": -33.420, "lon_min": -70.640, "lon_max": -70.600},
     "Z2": {"id": "Z2", "name": "Las Condes", "lat_min": -33.420, "lat_max": -33.390, "lon_min": -70.600, "lon_max": -70.550},
@@ -23,6 +24,7 @@ ZONES: Dict[str, Zone] = {
 
 
 def zone_area_km2(zone_id: str) -> float:
+    # Area aproximada para normalizar densidad en Q3.
     zone = ZONES[zone_id]
     delta_lat = abs(zone["lat_max"] - zone["lat_min"])
     delta_lon = abs(zone["lon_max"] - zone["lon_min"])
@@ -32,4 +34,5 @@ def zone_area_km2(zone_id: str) -> float:
     return max(lat_km * lon_km, 1e-6)
 
 
+# Areas precalculadas para consultas de densidad.
 ZONE_AREAS_KM2 = {zone_id: zone_area_km2(zone_id) for zone_id in ZONES}

@@ -19,26 +19,31 @@ class ResponseEngine:
         self.data = data
 
     def q1_count(self, zone_id: str, confidence_min: float = 0.0) -> int:
+        # Q1: conteo de edificios por zona y umbral de confianza.
         records = self.data[zone_id]
         return sum(1 for r in records if r.confidence >= confidence_min)
 
     def q2_area(self, zone_id: str, confidence_min: float = 0.0) -> dict:
+        # Q2: area promedio y area total por zona.
         areas = [r.area_in_meters for r in self.data[zone_id] if r.confidence >= confidence_min]
         if not areas:
             return {"avg_area": 0.0, "total_area": 0.0, "n": 0}
         return {"avg_area": mean(areas), "total_area": sum(areas), "n": len(areas)}
 
     def q3_density(self, zone_id: str, confidence_min: float = 0.0) -> float:
+        # Q3: densidad por km2 normalizada por el area de la zona.
         count = self.q1_count(zone_id, confidence_min)
         return count / ZONE_AREAS_KM2[zone_id]
 
     def q4_compare(self, zone_id_a: str, zone_id_b: str, confidence_min: float = 0.0) -> dict:
+        # Q4: comparacion de densidad entre dos zonas.
         da = self.q3_density(zone_id_a, confidence_min)
         db = self.q3_density(zone_id_b, confidence_min)
         winner = zone_id_a if da > db else zone_id_b
         return {"zone_a": zone_id_a, "density_a": da, "zone_b": zone_id_b, "density_b": db, "winner": winner}
 
     def q5_confidence_dist(self, zone_id: str, bins: int = 5) -> list:
+        # Q5: histograma de confianza en una zona.
         scores = [r.confidence for r in self.data[zone_id]]
         counts, edges = np.histogram(scores, bins=bins, range=(0, 1))
         return [
@@ -97,6 +102,7 @@ class ResponseEngine:
 
 
 def build_cache_key(query: QueryRequest) -> str:
+    # Formato de cache key alineado con las consultas Q1-Q5 del enunciado.
     conf = f"{query.confidence_min:.2f}"
     if query.query_type == "Q1":
         return f"count:{query.zone_id}:conf={conf}"

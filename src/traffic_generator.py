@@ -12,6 +12,7 @@ from src.config import ZONES
 
 
 def _pick_zone(distribution: str, rng: random.Random) -> str:
+    # Seleccion de zona con distribucion uniforme o Zipf.
     zone_ids = list(ZONES.keys())
     if distribution == "uniform":
         return rng.choice(zone_ids)
@@ -25,6 +26,7 @@ def _pick_zone(distribution: str, rng: random.Random) -> str:
 
 
 def _generate_query(distribution: str, rng: random.Random) -> dict:
+    # Genera consultas sinteticas Q1-Q5 con parametros validos.
     query_type = rng.choice(["Q1", "Q2", "Q3", "Q4", "Q5"])
 
     if query_type == "Q4":
@@ -55,6 +57,7 @@ def _default_metrics_url(base_url: str) -> str:
 
 
 def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: str, sleep_ms: int, seed: int) -> None:
+    # Envia trafico controlado y reporta metricas agregadas.
     rng = random.Random(seed)
     session = requests.Session()
     endpoint = f"{base_url.rstrip('/')}/query"

@@ -15,6 +15,7 @@ engine: ResponseEngine | None = None
 @app.on_event("startup")
 def startup() -> None:
     global engine
+    # Precarga el dataset en memoria; no hay BD en runtime.
     dataset_path = os.getenv("DATASET_PATH")
     engine = ResponseEngine(load_dataset(dataset_path))
 
@@ -26,6 +27,7 @@ def health() -> dict:
 
 @app.post("/compute")
 def compute(query: QueryRequest) -> dict:
+    # Ejecuta Q1-Q5 en memoria y retorna el resultado al cache.
     if engine is None:
         raise HTTPException(
             status_code=503,

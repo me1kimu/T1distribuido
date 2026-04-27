@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class QueryRequest(BaseModel):
+    # Payload de consultas Q1-Q5 con parametros de zona y confianza.
     query_type: Literal["Q1", "Q2", "Q3", "Q4", "Q5"]
     zone_id: Optional[str] = None
     zone_id_a: Optional[str] = None
@@ -15,6 +16,7 @@ class QueryRequest(BaseModel):
 
 
 class MetricEvent(BaseModel):
+    # Eventos de cache para hit/miss y eviccion.
     event_type: Literal["hit", "miss", "eviction"]
     query_type: str
     latency_ms: float = Field(ge=0.0)

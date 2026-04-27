@@ -18,6 +18,7 @@ class BuildingRecord:
 
 
 def _generate_synthetic_records(seed: int = 42, records_per_zone: int = 1000) -> Dict[str, List[BuildingRecord]]:
+    # Fallback sintetico si no hay dataset real disponible.
     rng = random.Random(seed)
     data: Dict[str, List[BuildingRecord]] = {}
     for zone_id, zone in ZONES.items():
@@ -36,6 +37,7 @@ def _generate_synthetic_records(seed: int = 42, records_per_zone: int = 1000) ->
 
 
 def load_dataset(dataset_path: str | None = None) -> Dict[str, List[BuildingRecord]]:
+    # Carga el CSV y agrupa por zona; si falla, usa datos sinteticos.
     if not dataset_path:
         return _generate_synthetic_records()
 

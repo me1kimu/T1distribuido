@@ -20,6 +20,7 @@ response_client: httpx.AsyncClient | None = None
 metrics_client: httpx.AsyncClient | None = None
 response_service_url = os.getenv("RESPONSE_SERVICE_URL", "http://localhost:8002")
 metrics_service_url = os.getenv("METRICS_SERVICE_URL", "http://localhost:8001")
+# TTL de cache en segundos para respuestas precargadas.
 cache_ttl_seconds = int(os.getenv("CACHE_TTL", "120"))
 _last_evicted_keys = 0
 _eviction_lock = asyncio.Lock()
@@ -96,11 +97,13 @@ async def query(payload: QueryRequest) -> dict:
         cached = None
 
     if cached is not None:
+        # Cache hit: responde desde Redis y registra latencia.
         latency_ms = (time.perf_counter() - start) * 1000
         await _push_metric(MetricEvent(event_type="hit", query_type=payload.query_type, latency_ms=latency_ms))
         return {"cache_key": key, "source": "cache", "result": json.loads(cached)}
 
     try:
+        # Cache miss: delega el calculo al servicio de respuestas.
         response = await response_ref.post(f"{response_service_url}/compute", json=payload.model_dump())
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -118,6 +121,7 @@ async def query(payload: QueryRequest) -> dict:
     await _push_metric(MetricEvent(event_type="miss", query_type=payload.query_type, latency_ms=latency_ms))
 
     evictions = await _register_evictions_if_any()
+    # Reporta evicciones acumuladas como eventos de metricas.
     for _ in range(evictions):
         await _push_metric(MetricEvent(event_type="eviction", query_type=payload.query_type, latency_ms=0.0))
 

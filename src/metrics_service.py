@@ -24,6 +24,7 @@ class MetricsRegistry:
         self._by_query: Dict[str, int] = defaultdict(int)
 
     def record(self, event: MetricEvent) -> None:
+        # Registra hits, misses, latencias y evicciones para el analisis.
         with self._lock:
             self._latencies.append(event.latency_ms)
             self._by_query[event.query_type] += 1
@@ -45,6 +46,7 @@ class MetricsRegistry:
         return ordered[idx]
 
     def summary(self) -> dict:
+        # Resume hit/miss rate, throughput y percentiles p50/p95.
         with self._lock:
             total = self._hits + self._misses
             uptime = max(time.time() - self._started_at, 1e-6)
