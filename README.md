@@ -46,7 +46,14 @@ pytest -q
 
 ## Notas
 
-- El `Response Service` precarga datos desde `src/open_buildings_rm.csv`.
-- Si el dataset no existe o está incompleto, se genera un dataset sintético en memoria.
+- **Dataset**: el archivo `967_buildings.csv` debe estar en la carpeta raíz del proyecto antes de ejecutar `docker compose up`.
+  Para descargarlo manualmente:
+  ```bash
+  curl -o 967_buildings.csv.gz 'https://storage.googleapis.com/open-buildings-data/v3/polygons_s2_level_4_gzip/967_buildings.csv.gz'
+  gunzip 967_buildings.csv.gz
+  ```
+  Si ejecutas el servicio localmente (fuera de Docker), el sistema te pedirá autorización para descargarlo automáticamente.
+- Puedes sobreescribir la ruta con `DATASET_PATH`.
 - El TTL de caché se configura con `CACHE_TTL`.
 - La política de remoción configurada por defecto en `docker-compose.yml` es `allkeys-lru`.
+

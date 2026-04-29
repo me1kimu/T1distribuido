@@ -56,6 +56,42 @@ def _default_metrics_url(base_url: str) -> str:
     return urlunparse((parsed.scheme or "http", f"{host}:8001", "/summary", "", "", ""))
 
 
+def _wait_for_dataset(health_url: str, timeout: int) -> None:
+    """Espera hasta que el response-service reporte dataset_loaded=true."""
+    print(f"Esperando que el dataset esté listo ({health_url}, timeout={timeout}s)...")
+    start = time.monotonic()
+    interval = 10  # segundos entre polls
+
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed > timeout:
+            print(f"TIMEOUT: el dataset no estuvo listo en {timeout}s. Continuando de todas formas.")
+            return
+
+        try:
+            resp = requests.get(health_url, timeout=5)
+            if resp.ok:
+                data = resp.json()
+                loaded = data.get("dataset_loaded", False)
+                status = data.get("dataset_status", "unknown")
+                detail = data.get("dataset_detail", "")
+
+                if loaded:
+                    print(f"Dataset listo! (status={status}, detail={detail})")
+                    return
+
+                print(f"  [{elapsed:.0f}s] dataset_status={status} detail={detail}")
+
+                if status == "error":
+                    error = data.get("dataset_error", "desconocido")
+                    print(f"ERROR: el dataset falló al cargar: {error}")
+                    return
+        except requests.RequestException as exc:
+            print(f"  [{elapsed:.0f}s] health check falló: {exc}")
+
+        time.sleep(interval)
+
+
 def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: str, sleep_ms: int, seed: int) -> None:
     # Envia trafico controlado y reporta metricas agregadas.
     rng = random.Random(seed)
@@ -105,7 +141,21 @@ def main() -> None:
     parser.add_argument("--metrics-url", default=None)
     parser.add_argument("--sleep-ms", type=int, default=0)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--wait-ready-url",
+        default=None,
+        help="URL del health endpoint del response-service. Si se provee, espera hasta que dataset_loaded=true.",
+    )
+    parser.add_argument(
+        "--wait-ready-timeout",
+        type=int,
+        default=900,
+        help="Timeout en segundos para esperar al dataset (default: 900 = 15 min).",
+    )
     args = parser.parse_args()
+
+    if args.wait_ready_url:
+        _wait_for_dataset(args.wait_ready_url, args.wait_ready_timeout)
 
     run(args.base_url, args.metrics_url, args.requests, args.distribution, args.sleep_ms, args.seed)
 
