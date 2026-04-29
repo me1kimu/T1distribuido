@@ -1,0 +1,1 @@
+{"hits":1885,"misses":115,"evictions":0,"hit_rate":0.9425,"miss_rate":0.0575,"throughput_qps":24.137355862657778,"latency_ms_p50":0.52051249986107,"latency_ms_p95":9.689831999821763,"eviction_rate_per_min":0.0,"cache_efficiency":-0.386792318510743,"queries_by_type":{"Q3":384,"Q1":421,"Q5":374,"Q4":410,"Q2":411}}

@@ -21,7 +21,7 @@ Plataforma distribuida para consultas geoespaciales sobre Google Open Buildings 
 ## Ejecución con Docker Compose
 
 ```bash
-docker compose up --build
+docker compose up -d --build redis metrics-service response-service cache-service --wait --wait-timeout 900
 ```
 
 Servicios expuestos:
@@ -46,7 +46,7 @@ pytest -q
 
 ## Notas
 
-- El `Response Service` precarga datos desde `src/open_buildings_rm.csv`.
-- Si el dataset no existe o está incompleto, se genera un dataset sintético en memoria.
+- El `Response Service` descarga automáticamente el dataset de Google Open Buildings (tile S2 `967_buildings.csv.gz`) desde GCS al iniciar. El archivo parcial y el `.csv.gz` final se guardan en el volumen Docker `dataset/` para poder reanudar descargas interrumpidas.
+- Si la velocidad media de descarga cae por debajo de 1 Mbps antes de completar el archivo, el servicio falla sin generar datos alternativos y la siguiente ejecución reanuda desde lo ya descargado.
 - El TTL de caché se configura con `CACHE_TTL`.
 - La política de remoción configurada por defecto en `docker-compose.yml` es `allkeys-lru`.

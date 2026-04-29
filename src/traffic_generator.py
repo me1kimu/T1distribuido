@@ -71,7 +71,7 @@ def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: s
         payload = _generate_query(distribution, rng)
         by_type[payload["query_type"]] += 1
         try:
-            res = session.post(endpoint, json=payload, timeout=30)
+            res = session.post(endpoint, json=payload, timeout=60)
             if res.ok:
                 ok += 1
             else:
@@ -90,7 +90,7 @@ def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: s
 
     try:
         metrics_endpoint = metrics_url or _default_metrics_url(base_url)
-        metrics = session.get(metrics_endpoint, timeout=5)
+        metrics = session.get(metrics_endpoint, timeout=60)
         if metrics.ok:
             print("Resumen métricas:", metrics.json())
     except requests.RequestException:

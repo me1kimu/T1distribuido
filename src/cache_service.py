@@ -32,8 +32,8 @@ async def startup() -> None:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     client = redis.from_url(redis_url, decode_responses=True)
     redis_client = client
-    response_client = httpx.AsyncClient(timeout=30.0)
-    metrics_client = httpx.AsyncClient(timeout=5.0)
+    response_client = httpx.AsyncClient(timeout=60.0)
+    metrics_client = httpx.AsyncClient(timeout=60.0)
     try:
         info = await to_thread.run_sync(client.info, "stats")
         _last_evicted_keys = int(info.get("evicted_keys", 0))

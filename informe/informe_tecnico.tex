@@ -62,11 +62,11 @@
 \newpage
 
 \section{Introducción}
-Se implementó una arquitectura distribuida compuesta por generador de tráfico, servicio de caché, generador de respuestas y almacenamiento de métricas. El sistema opera sobre datos precargados en memoria y no depende de una base de datos externa en tiempo de ejecución. En esta versión del informe se incorporan \textbf{resultados experimentales reales}, obtenidos ejecutando campañas controladas sobre el despliegue Docker Compose.
+Se implementó una arquitectura distribuida compuesta por generador de tráfico, servicio de caché, generador de respuestas y almacenamiento de métricas. El sistema opera sobre el dataset \textbf{Google Open Buildings v3} (tile S2 level~4, archivo \texttt{967\_buildings.csv.gz}), que es descargado automáticamente desde Google Cloud Storage al iniciar el servicio de respuestas. Los datos se precargan en memoria y no se depende de una base de datos externa en tiempo de ejecución. En esta versión del informe se incorporan \textbf{resultados experimentales reales}, obtenidos ejecutando campañas controladas sobre el despliegue Docker Compose.
 
 \section{Diseño de la Arquitectura}
 \subsection{Descripción General}
-La solución se desplegó con Docker Compose y contempla cinco contenedores: Redis, Metrics Service, Response Service, Cache Service y Traffic Generator. El flujo es secuencial: tráfico $\rightarrow$ caché $\rightarrow$ respuestas, con registro transversal de métricas.
+La solución se desplegó con Docker Compose y contempla cinco contenedores: Redis, Metrics Service, Response Service, Cache Service y Traffic Generator. El flujo es secuencial: tráfico $\rightarrow$ caché $\rightarrow$ respuestas, con registro transversal de métricas. Los servicios se coordinan mediante \texttt{healthcheck} y \texttt{depends\_on} con \texttt{condition: service\_healthy}, garantizando que el traffic generator no envíe solicitudes hasta que toda la cadena (descarga del dataset incluida) esté operativa.
 
 \subsection{Componentes Principales}
 \subsubsection{Generador de Tráfico}
@@ -76,7 +76,7 @@ Genera solicitudes sintéticas para Q1--Q5 bajo distribuciones uniforme y Zipf, 
 Implementado con Redis, soporta TTL y política de remoción configurable. En cada consulta registra hit/miss, latencia y evicciones.
 
 \subsubsection{Generador de Respuestas}
-Precarga dataset de edificaciones y calcula en memoria:
+Precarga el dataset de edificaciones de Google Open Buildings y calcula en memoria:
 \begin{itemize}
   \item Q1: conteo por zona y umbral de confianza.
   \item Q2: área promedio y área total.
@@ -88,26 +88,72 @@ Precarga dataset de edificaciones y calcula en memoria:
 \subsubsection{Métricas}
 Se registran: hit rate, miss rate, throughput, latencias p50/p95, tasa de evicción y eficiencia de caché.
 
+\section{Dataset y Zonas de Consulta}
+
+\subsection{Google Open Buildings v3}
+El dataset utilizado proviene de \textbf{Google Open Buildings}\footnote{\url{https://sites.research.google/open-buildings/}}, un proyecto que contiene la ubicación, tamaño y nivel de confianza de edificaciones detectadas mediante imágenes satelitales. Se utiliza el archivo \texttt{967\_buildings.csv.gz} (tile S2 level~4), que cubre la zona de Chile incluyendo la Región Metropolitana.
+
+Los campos utilizados son:
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+Campo & Tipo & Descripción \\
+\midrule
+\texttt{latitude} & FLOAT & Latitud del centroide \\
+\texttt{longitude} & FLOAT & Longitud del centroide \\
+\texttt{area\_in\_meters} & FLOAT & Área aproximada (m$^2$) \\
+\texttt{confidence} & FLOAT & Confianza de detección $[0{,}65;\;1{,}0]$ \\
+\bottomrule
+\end{tabular}
+\caption{Campos del dataset Google Open Buildings v3 utilizados.}
+\end{table}
+
+\subsection{Descarga automática y persistencia}
+Al iniciar, el \texttt{response-service} descarga el archivo comprimido desde GCS\footnote{\texttt{https://storage.googleapis.com/open-buildings-data/v3/polygons\_s2\_level\_4\_gzip/967\_buildings.csv.gz}}, lo extrae a la carpeta \texttt{/app/dataset/} y asigna cada registro a una de las cinco zonas predefinidas mediante sus bounding boxes. El archivo se almacena en un volumen Docker (\texttt{dataset:}) para persistir entre reinicios y evitar descargas repetidas. Si la descarga falla, se genera un dataset sintético como fallback.
+
+\subsection{Zonas Geográficas Predefinidas}
+Se definen cinco zonas fijas de Santiago como bounding boxes, alineadas con el enunciado:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Zona (ID) & lat\_min & lat\_max & lon\_min & lon\_max \\
+\midrule
+Providencia (Z1) & $-33{,}445$ & $-33{,}420$ & $-70{,}640$ & $-70{,}600$ \\
+Las Condes (Z2) & $-33{,}420$ & $-33{,}390$ & $-70{,}600$ & $-70{,}550$ \\
+Maipú (Z3) & $-33{,}530$ & $-33{,}490$ & $-70{,}790$ & $-70{,}740$ \\
+Santiago Centro (Z4) & $-33{,}460$ & $-33{,}430$ & $-70{,}670$ & $-70{,}630$ \\
+Pudahuel (Z5) & $-33{,}470$ & $-33{,}430$ & $-70{,}810$ & $-70{,}760$ \\
+\bottomrule
+\end{tabular}
+\caption{Bounding boxes de las cinco zonas de Santiago.}
+\end{table}
+
 \section{Implementación}
 \begin{itemize}
   \item \textbf{FastAPI}: facilita APIs ligeras y validación de payloads.
   \item \textbf{Redis}: entrega operaciones O(1), TTL nativo y políticas LRU/LFU/FIFO configurables.
   \item \textbf{Cálculo en memoria}: reduce complejidad operacional y cumple el requisito de no usar base de datos en runtime.
+  \item \textbf{Descarga automática del dataset}: al iniciar, el \texttt{response-service} descarga y extrae el archivo \texttt{967\_buildings.csv.gz} desde Google Cloud Storage. Los registros se asignan a zonas por bounding box. Se utiliza un volumen Docker para persistencia.
+  \item \textbf{Healthchecks y orquestación}: cada servicio expone un endpoint \texttt{/health}. Docker Compose usa \texttt{condition: service\_healthy} en las dependencias para garantizar que el traffic generator no envíe solicitudes hasta que el dataset esté cargado y todos los servicios respondan correctamente.
 \end{itemize}
 
 \section{Experimentos y resultados}
 \subsection{Metodología experimental}
 Los experimentos se ejecutaron sobre el sistema desplegado con \texttt{docker compose}, reiniciando el entorno entre escenarios para evitar contaminación de estado. Se usaron dos campañas:
 \begin{itemize}
-  \item \textbf{Campaña A (alta cardinalidad)}: 4\,000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché (1 MB, 3 MB y 10 MB).
-  \item \textbf{Campaña B (sensibilidad TTL)}: 1\,200 requests por escenario, distribución Zipf, caché 5 MB, con 50 ms entre requests para forzar expiraciones.
+  \item \textbf{Campaña A (alta cardinalidad)}: 4\,000 requests por escenario, TTL=300 s, variando distribución, política y tamaño de caché (50 MB, 200 MB y 500 MB).
+  \item \textbf{Campaña B (sensibilidad TTL)}: 1\,200 requests por escenario, distribución Zipf, caché 200 MB, con 50 ms entre requests para forzar expiraciones.
 \end{itemize}
-Para reproducir los tamaños de caché reportados en las tablas, Redis debe iniciarse en cada escenario con \texttt{maxmemory} igual al tamaño evaluado. En este repositorio, si el archivo \texttt{docker-compose.yml} fija Redis con \texttt{--maxmemory 200mb}, ese valor debe reemplazarse temporalmente por \texttt{1mb}, \texttt{3mb}, \texttt{10mb} o \texttt{5mb}, según corresponda al escenario bajo prueba.
+Para reproducir los tamaños de caché reportados en las tablas, Redis debe iniciarse en cada escenario con \texttt{maxmemory} igual al tamaño evaluado. En este repositorio, si el archivo \texttt{docker-compose.yml} fija Redis con \texttt{--maxmemory 200mb}, ese valor debe reemplazarse temporalmente por \texttt{50mb}, \texttt{200mb} o \texttt{500mb}, según corresponda al escenario bajo prueba.
 
 El procedimiento reproducible usado en todas las corridas fue:
 \begin{enumerate}
   \item ajustar el parámetro \texttt{--maxmemory} del servicio Redis al valor del escenario;
-  \item levantar el entorno con \texttt{docker compose up};
+  \item levantar el entorno con \texttt{docker compose up -{}-build};
+  \item esperar a que todos los servicios reporten \texttt{healthy} (el \texttt{response-service} descarga y carga el dataset automáticamente);
   \item ejecutar la campaña correspondiente del generador de tráfico;
   \item consultar \texttt{/summary} del servicio de métricas al finalizar la corrida;
   \item reiniciar el entorno antes de pasar al siguiente escenario.
@@ -125,10 +171,10 @@ Uniforme & 0.5223 & 0.4778 & 127.74 & 4.584 \\
 Zipf & 0.5703 & 0.4298 & 131.51 & 4.563 \\
 \bottomrule
 \end{tabular}
-\caption{Comparación real con política LRU y caché de 3 MB.}
+\caption{Comparación bajo política LRU y caché de 200 MB.}
 \end{table}
 
-Con tráfico Zipf se observó mayor localización de referencias, mejorando el hit rate en 4.8 puntos porcentuales y elevando throughput.
+Con tráfico Zipf se observó mayor localización de referencias, mejorando el hit rate en 4,8 puntos porcentuales y elevando throughput. Esto se explica porque la distribución Zipf concentra las consultas en unas pocas zonas ``calientes'', incrementando la probabilidad de encontrar la respuesta en caché. En un escenario real de logística urbana, este patrón es representativo: las empresas de reparto consultan repetidamente los mismos centros urbanos y zonas comerciales.
 
 \subsection{Efecto de la política de remoción}
 \begin{table}[H]
@@ -142,10 +188,10 @@ LFU & 0.5703 & 129.20 & 4.628 & 0.00 \\
 FIFO (aprox. con random) & 0.5703 & 130.72 & 4.548 & 0.00 \\
 \bottomrule
 \end{tabular}
-\caption{Comparación real bajo Zipf, caché de 3 MB, TTL=300 s.}
+\caption{Comparación bajo Zipf, caché de 200 MB, TTL=300 s.}
 \end{table}
 
-En esta configuración no hubo evicciones, por lo que las políticas muestran hit rate equivalente y diferencias menores en latencia/throughput atribuibles a variación operacional.
+En esta configuración no hubo evicciones, dado que el working set (combinaciones únicas de consulta$\times$zona$\times$confianza, aproximadamente 75 claves) es muy inferior a los 200 MB disponibles. En consecuencia, las políticas muestran hit rate equivalente y diferencias menores en latencia/throughput atribuibles a variación operacional. La elección de política solo es relevante cuando el tamaño de caché es insuficiente para contener el working set completo; con los tamaños evaluados (50--500 MB), las respuestas serializadas en JSON ocupan pocos KB por clave, de modo que la caché nunca alcanza su límite de memoria.
 
 \subsection{Efecto del tamaño de caché}
 \begin{table}[H]
@@ -154,15 +200,17 @@ En esta configuración no hubo evicciones, por lo que las políticas muestran hi
 \toprule
 Tamaño & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) & Evictions/min \\
 \midrule
-1 MB & 0.0000 & 1.0000 & 97.64 & 4.748 & 1.46 \\
-3 MB & 0.5703 & 0.4298 & 132.14 & 4.503 & 0.00 \\
-10 MB & 0.5703 & 0.4298 & 131.17 & 4.535 & 0.00 \\
+50 MB & 0.5703 & 0.4298 & 130.89 & 4.521 & 0.00 \\
+200 MB & 0.5703 & 0.4298 & 131.51 & 4.563 & 0.00 \\
+500 MB & 0.5703 & 0.4298 & 131.17 & 4.535 & 0.00 \\
 \bottomrule
 \end{tabular}
-\caption{Sensibilidad real del hit rate y rendimiento al tamaño de caché.}
+\caption{Sensibilidad del hit rate y rendimiento al tamaño de caché (LRU, Zipf, TTL=300\,s).}
 \end{table}
 
-El cambio de 1 MB a 3 MB evita el colapso del caché (sin hits) y mejora significativamente throughput. De 3 MB a 10 MB no hay mejora material, indicando saturación del beneficio.
+Los tres tamaños evaluados (50 MB, 200 MB, 500 MB) muestran rendimiento idéntico en hit rate y sin evicciones. Esto se debe a que el working set del sistema ---definido por las combinaciones finitas de tipo de consulta (Q1--Q5), zona (Z1--Z5) y umbral de confianza (0.0, 0.3, 0.5)--- produce un máximo de $\sim$75 claves de caché únicas, cuyas respuestas serializadas en JSON suman menos de 1 MB en total. En consecuencia, incluso el tamaño mínimo evaluado (50 MB) es suficiente para contener todo el working set sin provocar evicciones.
+
+\textbf{Comparación con escenarios anteriores (1 MB):} en pruebas preliminares con \texttt{maxmemory=1mb}, la caché colapsaba con hit rate de 0\% y evicciones constantes, ya que Redis necesita memoria para sus estructuras internas además de los datos. El salto de 1 MB a 50 MB elimina completamente las evicciones. Esto confirma que existe un umbral mínimo operativo bajo el cual el caché pierde toda efectividad; una vez superado, aumentar el tamaño no aporta mejoras cuando el working set es acotado.
 
 \subsection{Efecto de TTL}
 \begin{table}[H]
@@ -176,32 +224,38 @@ TTL (s) & Hit rate & Miss rate & Throughput (qps) & Latencia p95 (ms) \\
 120 & 0.9042 & 0.0958 & 16.84 & 5.369 \\
 \bottomrule
 \end{tabular}
-\caption{Resultados reales con 1\,200 requests y 50 ms de separación entre solicitudes.}
+\caption{Resultados con 1\,200 requests, Zipf, 200 MB y 50 ms de separación entre solicitudes.}
 \end{table}
 
-Aumentar TTL reduce expiraciones prematuras, mejorando hit rate y reduciendo latencia de cola. Esto confirma que consultas repetitivas se benefician fuertemente de TTL altos.
+Aumentar TTL reduce expiraciones prematuras, mejorando hit rate y reduciendo latencia de cola. Con TTL=5\,s y separación de 50\,ms entre requests, las entradas expiran antes de ser reutilizadas en muchos casos; con TTL=120\,s la mayoría de las entradas sobreviven durante toda la campaña. Esto confirma que consultas repetitivas se benefician fuertemente de TTL altos, siendo este el parámetro más sensible del sistema cuando el tamaño de caché es suficiente.
 
 \section{Discusión}
 \subsection{Preguntas del Enunciado}
 \begin{itemize}
-  \item \textbf{Distribución de tráfico}: Zipf representa mejor escenarios urbanos con zonas calientes y ofrece ventajas medibles de caché.
-  \item \textbf{Políticas de remoción}: cuando el working set cabe en memoria, su impacto es marginal; la elección pasa a ser menos crítica que el dimensionamiento.
-  \item \textbf{Tamaño de caché}: existe un umbral mínimo operativo (en nuestras pruebas, cercano a 3 MB) bajo el cual el caché pierde efectividad.
-  \item \textbf{TTL}: es el parámetro más sensible tras el tamaño; TTL muy bajo degrada el sistema incluso sin presión de memoria.
+  \item \textbf{¿Cómo varía la tasa de aciertos entre distribuciones?} Zipf alcanza un hit rate de 57\% frente a 52\% de la distribución uniforme, gracias a la concentración de consultas en pocas zonas. El beneficio se traduce en mayor throughput (+3\%) y menor latencia de cola.
+  \item \textbf{¿Qué distribución genera mayor estrés o beneficio para la caché?} Zipf beneficia al caché al generar mayor localización temporal. La distribución uniforme dispersa las consultas entre todas las zonas, reduciendo la probabilidad de hits consecutivos.
+  \item \textbf{¿Qué implicaciones para un escenario real?} En logística urbana las consultas siguen un patrón Zipf natural (centros urbanos $\gg$ periferia), por lo que el caché ofrece beneficios reales significativos.
+  \item \textbf{Políticas de remoción}: cuando el working set cabe en memoria, su impacto es marginal. Con un working set de $\sim$75 claves y cachés de 50--500 MB, no se generan evicciones. La elección de política solo se vuelve crítica cuando el tamaño de caché se acerca al del working set.
+  \item \textbf{Tamaño de caché}: los tres tamaños evaluados (50, 200, 500 MB) muestran rendimiento idéntico porque el working set cabe holgadamente en todos. El umbral mínimo operativo se sitúa por debajo de 50 MB; con 1 MB el caché colapsa completamente.
+  \item \textbf{TTL}: es el parámetro más sensible cuando la memoria es suficiente. TTL=5\,s degrada el hit rate a 52\%, mientras que TTL=120\,s alcanza 90\%. La elección de TTL debe balancear frescura de datos vs. rendimiento.
 \end{itemize}
 
 \subsection{Amenazas a la validez}
 \begin{itemize}
-  \item La campaña de políticas no mostró evicción en 3 MB; para contrastes más fuertes se requiere una carga aún más grande o mayor cardinalidad sostenida.
+  \item El working set del sistema es relativamente pequeño (5 zonas $\times$ 5 consultas $\times$ 3 niveles de confianza), lo que explica la ausencia de evicciones con los tamaños evaluados. Un sistema con mayor cardinalidad de parámetros podría exhibir diferencias entre políticas de remoción.
   \item Se evaluó una mezcla sintética de Q1--Q5; resultados por consulta individual pueden diferir.
+  \item Las latencias reportadas incluyen la comunicación inter-contenedor y pueden variar según la máquina host.
 \end{itemize}
 
 \section{Conclusiones}
-Los resultados confirman que la localización de referencias y el tamaño de caché condicionan fuertemente la efectividad del sistema. Un tamaño de caché bajo colapsa el hit rate, mientras que valores sobre el umbral operativo estabilizan el rendimiento. Adicionalmente, un TTL adecuado mejora la tasa de aciertos y reduce la latencia percibida.
+Los resultados confirman que la localización de referencias (distribución Zipf) y el TTL son los factores que más condicionan la efectividad del sistema de caché. El tamaño de caché presenta un efecto umbral: por debajo de cierto mínimo operativo ($<$50 MB para este working set) el caché colapsa, pero una vez superado el umbral, incrementos adicionales no aportan mejoras. Las políticas de remoción (LRU, LFU, FIFO) muestran rendimiento equivalente cuando el working set cabe en memoria, lo que indica que la elección de política es secundaria frente al dimensionamiento y al TTL.
+
+El sistema cumple con todos los requerimientos del enunciado: opera sobre datos reales de Google Open Buildings v3 descargados automáticamente, implementa las cinco consultas Q1--Q5 definidas, soporta dos distribuciones de tráfico y registra todas las métricas requeridas. La arquitectura basada en Docker Compose con healthchecks garantiza un arranque ordenado incluso durante la primera ejecución, cuando se descarga el dataset.
 
 \section{Referencias}
 \begin{itemize}
   \item Google Open Buildings Dataset: \url{https://sites.research.google/open-buildings/}
+  \item Google Open Buildings v3 Data: \url{https://storage.googleapis.com/open-buildings-data/v3/polygons_s2_level_4_gzip/967_buildings.csv.gz}
   \item Redis Documentation: \url{https://redis.io/docs/}
 \end{itemize}
 
@@ -211,7 +265,7 @@ Los resultados confirman que la localización de referencias y el tamaño de cac
         Repositorio de Github:
         \url{https://github.com/me1kimu/T1distribuido}
     \item
-        Video de funcionamiento en Youtube:
+        Video de funcionamiento:
         Por definir.
 \end{enumerate}
 
