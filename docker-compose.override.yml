@@ -1,0 +1,12 @@
+services:
+  redis:
+    command: ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+  cache-service:
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_URL=redis://redis:6379/0
+      - RESPONSE_SERVICE_URL=http://response-service:8002
+      - METRICS_SERVICE_URL=http://metrics-service:8001
+      - CACHE_TTL=120
+  traffic-generator:
+    command: ["python", "-m", "src.traffic_generator", "--base-url", "http://cache-service:8000", "--metrics-url", "http://metrics-service:8001/summary", "--requests", "2000", "--distribution", "zipf", "--sleep-ms", "50", "--seed", "7"]

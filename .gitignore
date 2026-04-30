@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+informe/informe_tecnico.*
+!informe/informe_tecnico.tex
+Template_Tareas_Sistemas_Distribuidos.zip
+informe/template/lab01_informe.tex
+.vscode/settings.json
+.tmp_pdf/
+tarea.txt
