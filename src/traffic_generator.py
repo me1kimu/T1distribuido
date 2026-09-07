@@ -56,10 +56,40 @@ def _default_metrics_url(base_url: str) -> str:
     return urlunparse((parsed.scheme or "http", f"{host}:8001", "/summary", "", "", ""))
 
 
+def _validated_service_url(
+    raw_url: str,
+    *,
+    allowed_hosts: set[str],
+    allowed_ports: set[int],
+    required_path: str | None = None,
+) -> str:
+    parsed = urlparse(raw_url.rstrip("/"))
+    scheme = parsed.scheme or "http"
+    host = parsed.hostname
+    port = parsed.port
+    path = parsed.path or "/"
+
+    if scheme not in {"http", "https"}:
+        raise ValueError(f"Unsupported URL scheme: {scheme}")
+    if host is None or host not in allowed_hosts:
+        raise ValueError(f"Host {host!r} is not allowed")
+    if port is None or port not in allowed_ports:
+        raise ValueError(f"Port {port!r} is not allowed")
+    if required_path is not None and path != required_path:
+        raise ValueError(f"Path {path!r} is not allowed")
+
+    return urlunparse((scheme, f"{host}:{port}", path, "", "", ""))
+
+
 import concurrent.futures
 
 def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: str, sleep_ms: int, seed: int) -> None:
     # Envia trafico controlado y reporta metricas agregadas concurrentemente.
+    base_url = _validated_service_url(
+        base_url,
+        allowed_hosts={"localhost", "127.0.0.1", "cache-service"},
+        allowed_ports={8000},
+    )
     rng = random.Random(seed)
     endpoint = f"{base_url.rstrip('/')}/query"
 
@@ -94,7 +124,13 @@ def run(base_url: str, metrics_url: str | None, requests_n: int, distribution: s
     print(f"Distribución por consulta: {dict(by_type)}")
 
     try:
-        metrics_endpoint = metrics_url or _default_metrics_url(base_url)
+        metrics_candidate = metrics_url or _default_metrics_url(base_url)
+        metrics_endpoint = _validated_service_url(
+            metrics_candidate,
+            allowed_hosts={"localhost", "127.0.0.1", "metrics-service"},
+            allowed_ports={8001},
+            required_path="/summary",
+        )
         metrics = requests.get(metrics_endpoint, timeout=60)
         if metrics.ok:
             print("Resumen métricas:", metrics.json())
