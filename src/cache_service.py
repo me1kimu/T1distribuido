@@ -5,6 +5,7 @@ import json
 import os
 import time
 from functools import partial
+from urllib.parse import urlparse
 
 import httpx
 import redis
@@ -19,7 +20,22 @@ redis_client: redis.Redis | None = None
 response_client: httpx.AsyncClient | None = None
 metrics_client: httpx.AsyncClient | None = None
 response_service_url = os.getenv("RESPONSE_SERVICE_URL", "http://localhost:8002")
-metrics_service_url = os.getenv("METRICS_SERVICE_URL", "http://localhost:8001")
+_ALLOWED_METRICS_HOSTS = {"localhost", "127.0.0.1", "::1", "metrics-service"}
+
+
+def _validated_metrics_service_url() -> str:
+    raw = os.getenv("METRICS_SERVICE_URL", "http://localhost:8001")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("METRICS_SERVICE_URL must use http or https")
+    if not parsed.hostname or parsed.hostname not in _ALLOWED_METRICS_HOSTS:
+        raise ValueError("METRICS_SERVICE_URL host is not allowed")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("METRICS_SERVICE_URL must not include credentials, query, or fragment")
+    return raw.rstrip("/")
+
+
+metrics_service_url = _validated_metrics_service_url()
 # TTL de cache en segundos para respuestas precargadas.
 cache_ttl_seconds = int(os.getenv("CACHE_TTL", "120"))
 _last_evicted_keys = 0
