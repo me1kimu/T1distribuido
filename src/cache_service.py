@@ -32,7 +32,9 @@ def _validated_response_service_url() -> str:
         raise ValueError("RESPONSE_SERVICE_URL host is not allowed")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("RESPONSE_SERVICE_URL must not include credentials, query, or fragment")
-    return raw.rstrip("/")
+    host = parsed.hostname
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{host}{port}".rstrip("/")
 
 
 def _validated_metrics_service_url() -> str:
@@ -44,7 +46,9 @@ def _validated_metrics_service_url() -> str:
         raise ValueError("METRICS_SERVICE_URL host is not allowed")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("METRICS_SERVICE_URL must not include credentials, query, or fragment")
-    return raw.rstrip("/")
+    host = parsed.hostname
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{host}{port}".rstrip("/")
 
 
 response_service_url = _validated_response_service_url()
